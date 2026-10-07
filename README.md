@@ -1,11 +1,14 @@
-# Project Name
+# Repository Fixer
 
-> One or two sentences describing what this project does and who it is for.
+**An AI coding agent that can analyse issues in a repository, generate fixes, and test those fixes in an isolated environment before they are proposed.**
+
+> 
 
 Part of the [MIC AIML Build Cycle 2026-27](https://github.com/MIC-AIML-Build-Cycle-2026-27), the AIML Department's project cycle at Microsoft Innovation Club.
 
 | | |
 |---|---|
+| **Project** | 4 |
 | **Status** | Foundation |
 | **Current milestone** | Review 1 (31 Oct – 3 Nov 2026) |
 | **Project Leads** | `<add GitHub username>`, `<add GitHub username>` |
@@ -16,7 +19,9 @@ Part of the [MIC AIML Build Cycle 2026-27](https://github.com/MIC-AIML-Build-Cyc
 
 ## Overview
 
-TBD. A short paragraph explaining the project in plain language. Someone outside the team should understand what you are building after reading it.
+
+
+TBD: expand this into a short plain-language explanation once the team has finalised scope.
 
 ## Problem Statement
 
@@ -72,8 +77,8 @@ Update this tree as the project grows. Add folders such as `experiments/`, `eval
 ### Installation
 
 ```bash
-git clone https://github.com/MIC-AIML-Build-Cycle-2026-27/<repository-name>.git
-cd <repository-name>
+git clone https://github.com/MIC-AIML-Build-Cycle-2026-27/Repository-Fixer.git
+cd Repository-Fixer
 # TBD: install dependencies
 ```
 

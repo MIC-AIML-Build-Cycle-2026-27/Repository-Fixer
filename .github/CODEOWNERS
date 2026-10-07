@@ -5,14 +5,14 @@
 # Owners must have write access to the repository.
 #
 # Replace the placeholder below with this project's leads team, e.g.:
-#   *  @MIC-AIML-Build-Cycle-2026-27/<project>-leads
+#   *  @MIC-AIML-Build-Cycle-2026-27/repository-fixer-leads
 # or with individual Project Lead usernames:
 #   *  @<add GitHub username> @<add GitHub username>
 
 # Default owners for everything in the repository
-# *  @MIC-AIML-Build-Cycle-2026-27/<project>-leads
+*  @MIC-AIML-Build-Cycle-2026-27/repository-fixer-leads
 
 # Optional: route specific areas to specific people
 # /docs/        @<add GitHub username>
 # /evaluation/  @<add GitHub username>
-# /.github/     @MIC-AIML-Build-Cycle-2026-27/<project>-leads
+# /.github/     @MIC-AIML-Build-Cycle-2026-27/repository-fixer-leads
