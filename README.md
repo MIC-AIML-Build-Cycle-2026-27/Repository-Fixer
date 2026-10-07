@@ -12,7 +12,7 @@ Part of the [MIC AIML Build Cycle 2026-27](https://github.com/MIC-AIML-Build-Cyc
 | **Status** | Foundation |
 | **Current milestone** | Review 1 (31 Oct – 3 Nov 2026) |
 | **Project Leads** | `<add GitHub username>`, `<add GitHub username>` |
-| **Project board** | TBD (add link) |
+| **Project board** | [Team board](https://github.com/orgs/MIC-AIML-Build-Cycle-2026-27/projects/4) (org members) |
 | **Handbook** | [build-cycle-handbook](https://github.com/MIC-AIML-Build-Cycle-2026-27/build-cycle-handbook) |
 
 ---
