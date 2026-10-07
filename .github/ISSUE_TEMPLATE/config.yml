@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Build Cycle Handbook
+    url: https://github.com/MIC-AIML-Build-Cycle-2026-27/build-cycle-handbook
+    about: Department-wide guidelines, timeline and review requirements.
+  - name: Report a security issue privately
+    url: https://github.com/MIC-AIML-Build-Cycle-2026-27/build-cycle-handbook/blob/main/docs/github-guide.md#security
+    about: Do not open public issues for leaked secrets or vulnerabilities.

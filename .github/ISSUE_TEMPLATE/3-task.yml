@@ -1,0 +1,24 @@
+name: Task
+description: A concrete piece of work (setup, refactoring, integration, chores).
+title: "[Task]: "
+labels: ["type: task"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / dependencies
+      description: Optional. Links, related issues, things this is blocked by.

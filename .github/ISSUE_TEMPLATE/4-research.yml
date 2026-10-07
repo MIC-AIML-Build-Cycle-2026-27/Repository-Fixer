@@ -1,0 +1,36 @@
+name: Research / Investigation
+description: Investigate a question before deciding how to build something.
+title: "[Research]: "
+labels: ["type: research"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question
+      description: The specific question this should answer.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why does this matter now? Which decision depends on it?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: What should exist at the end? (e.g. a comparison table, a recommendation, a short write-up in docs/)
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Papers, repositories, articles or docs to start from.
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings
+      description: Fill this in, or add a comment, when the investigation is done. Summarise the answer and link to sources.

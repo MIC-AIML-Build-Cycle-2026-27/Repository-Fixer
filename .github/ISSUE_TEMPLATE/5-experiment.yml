@@ -1,0 +1,35 @@
+name: Experiment
+description: Run a model, prompt, parameter or approach experiment and record the result.
+title: "[Experiment]: "
+labels: ["type: experiment"]
+body:
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis / goal
+      description: What do you expect to happen, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Data, model/approach, parameters, baseline to compare against, hardware.
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: How will results be measured?
+      description: The metric(s) or criteria agreed with the team. Decide this before running.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Fill in when done. Include numbers, plots, the commit/branch used and how to reproduce.
+  - type: textarea
+    id: conclusion
+    attributes:
+      label: Conclusion / next step

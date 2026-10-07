@@ -1,0 +1,22 @@
+name: Documentation
+description: Add, fix or improve documentation.
+title: "[Docs]: "
+labels: ["type: docs"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs documenting or fixing?
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Location
+      description: File or section, if known.
+      placeholder: "e.g. README.md > Installation"
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who is it for?
+      description: Optional. New team members, reviewers, end users, etc.

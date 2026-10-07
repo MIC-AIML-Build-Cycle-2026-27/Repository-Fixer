@@ -1,0 +1,142 @@
+# Build Cycle CI
+#
+# This workflow adapts to what is in the repository:
+#   - Python checks run only if a requirements.txt or pyproject.toml exists.
+#   - Node.js checks run only if a package.json exists.
+#   - If neither exists yet, CI passes with a notice. Nothing fails just
+#     because the project has not started.
+#
+# The final "ci-status" job is the single required check for `main`.
+# Keep that job name unchanged so branch protection keeps working.
+#
+# Adapting it:
+#   - Code in a subfolder? Change PYTHON_DIR / NODE_DIR below (e.g. "backend").
+#   - Using Java, C#, Go, etc.? Copy a job from the organisation's workflow
+#     templates (Actions -> New workflow -> "By MIC AIML Build Cycle 2026-27")
+#     into this file and add it to the `needs:` list of ci-status.
+#   - Heavy ML dependencies (torch, CUDA)? Consider a lighter
+#     requirements-ci.txt and point the install step at it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_DIR: "."
+  PYTHON_VERSION: "3.12"
+  NODE_DIR: "."
+  NODE_VERSION: "22"
+
+jobs:
+  detect:
+    name: Detect project type
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.check.outputs.python }}
+      node: ${{ steps.check.outputs.node }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if [ -f "$PYTHON_DIR/requirements.txt" ] || [ -f "$PYTHON_DIR/pyproject.toml" ]; then
+            echo "python=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "python=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f "$NODE_DIR/package.json" ]; then
+            echo "node=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "node=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  python:
+    name: Python (lint + test)
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.PYTHON_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif grep -q '^\[project\]' pyproject.toml 2>/dev/null; then
+            pip install -e .
+          fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install pytest ruff
+      - name: Lint (ruff)
+        # Ruff's default rules catch real errors (syntax errors, undefined names, unused imports).
+        # Configure it in pyproject.toml under [tool.ruff] if needed.
+        run: ruff check .
+      - name: Test (pytest)
+        run: |
+          status=0
+          pytest || status=$?
+          # Exit code 5 = no tests collected. Allowed early on; remove this once tests exist.
+          if [ "$status" -eq 5 ]; then
+            echo "::notice::No Python tests found yet. Add tests under tests/."
+            exit 0
+          fi
+          exit "$status"
+
+  node:
+    name: Node.js (lint + test + build)
+    needs: detect
+    if: needs.detect.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.NODE_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      # Each script runs only if it is defined in package.json.
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Test
+        run: npm test --if-present
+      - name: Build
+        run: npm run build --if-present
+
+  ci-status:
+    name: ci-status
+    needs: [detect, python, node]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise results
+        run: |
+          echo "detect: ${{ needs.detect.result }}"
+          echo "python: ${{ needs.python.result }}"
+          echo "node:   ${{ needs.node.result }}"
+          if [ "${{ needs.detect.outputs.python }}" != "true" ] && [ "${{ needs.detect.outputs.node }}" != "true" ]; then
+            echo "::notice::No Python or Node.js project detected yet. Checks will start running automatically once one is added."
+          fi
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more checks failed."
+            exit 1
+          fi

@@ -1,0 +1,33 @@
+name: Feature
+description: Propose new functionality or an improvement.
+title: "[Feature]: "
+labels: ["type: feature"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What should be built?
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this needed? Which part of the project does it support?
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Proposed implementation
+      description: Optional. How you plan to approach it, and anything you are unsure about.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know it is done?
+      value: |
+        - [ ] 
+    validations:
+      required: true
