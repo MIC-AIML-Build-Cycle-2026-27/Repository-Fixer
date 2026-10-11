@@ -1,5 +1,6 @@
 """Clone and branch helpers. Everything goes through the `git` command line."""
 
+import logging
 import os
 import re
 import subprocess
@@ -7,6 +8,8 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -36,6 +39,8 @@ def _git(args: list[str], cwd: Path | None = None, timeout: int = 300, secrets=(
         for secret in secrets:
             if secret:
                 message = message.replace(secret, "***")
+        if not message:
+            message = f"exit code {proc.returncode} with no output"
         raise GitError(f"git {args[0]} failed: {message}")
     return proc.stdout.strip()
 
@@ -88,5 +93,9 @@ def current_branch(repo_path: Path) -> str:
 @contextmanager
 def cloned_repo(repo_full_name: str, token: str = "", ref: str | None = None) -> Iterator[Path]:
     """Clone into a temp folder and delete it when the `with` block ends."""
-    with tempfile.TemporaryDirectory(prefix="repofixer-", ignore_cleanup_errors=True) as tmp:
-        yield clone_github_repo(repo_full_name, Path(tmp) / "repo", token=token, ref=ref)
+    with tempfile.TemporaryDirectory(prefix="repofixer-") as tmp:
+        try:
+            yield clone_github_repo(repo_full_name, Path(tmp) / "repo", token=token, ref=ref)
+        finally:
+            pass
+    # Note: TemporaryDirectory cleanup failures (e.g. Windows file locks) raise here

@@ -8,8 +8,7 @@ Safety notes:
 
 Manual check:  python -m src.sandbox.runner path/to/cloned/repo
 """
-import src.jobs  # noqa: F401
-
+import logging
 import subprocess
 import sys
 import time
@@ -18,8 +17,19 @@ from pathlib import Path
 
 from src.schemas import TestResult
 
+log = logging.getLogger(__name__)
+
 DEFAULT_IMAGE = "repofixer-sandbox:latest"
 MAX_OUTPUT_CHARS = 20_000
+
+DOCKER_INFRA_PATTERNS = (
+    "cannot connect to the docker daemon",
+    "docker daemon",
+    "daemon not running",
+    "no such image",
+    "permission denied",
+    "is the docker daemon running",
+)
 
 TEST_SCRIPT = (
     "if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi; "
@@ -78,19 +88,32 @@ def run_tests_in_docker(
         proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise SandboxError("Docker is not installed or not on PATH") from exc
-    except subprocess.TimeoutExpired:
-        subprocess.run(["docker", "kill", name], capture_output=True)
+    except subprocess.TimeoutExpired as exc:
+        partial = ((exc.stdout or "") + (exc.stderr or "")).strip()
+        kill = subprocess.run(["docker", "kill", name], capture_output=True, text=True)
+        if kill.returncode != 0:
+            log.warning(
+                "docker kill %s failed: %s", name, (kill.stderr or kill.stdout).strip()
+            )
+        output = f"Tests timed out after {timeout}s"
+        if partial:
+            output += f"\nPartial output:\n{partial[-MAX_OUTPUT_CHARS:]}"
         return TestResult(
             passed=False,
-            output=f"Tests timed out after {timeout}s",
+            output=output,
             duration_seconds=time.monotonic() - started,
         )
 
-    output = (proc.stdout + proc.stderr)[-MAX_OUTPUT_CHARS:]
+    full_output = (proc.stdout or "") + (proc.stderr or "")
+    truncated = len(full_output) > MAX_OUTPUT_CHARS
+    output = full_output[-MAX_OUTPUT_CHARS:]
+    if truncated:
+        output = "...[truncated]...\n" + output
 
-    # Exit code 125 means `docker run` itself failed (e.g. the daemon is not running).
-    if proc.returncode == 125:
-        raise SandboxError(output.strip() or "docker run failed")
+    # Exit code 125 means `docker run` itself failed (e.g. the daemon is not running)..
+    lowered = output.lower()
+    if proc.returncode == 125 or any(p in lowered for p in DOCKER_INFRA_PATTERNS):
+        raise SandboxError(output.strip() or "Cannot run Docker. Is the daemon running?")
 
     return TestResult(
         passed=proc.returncode == 0,

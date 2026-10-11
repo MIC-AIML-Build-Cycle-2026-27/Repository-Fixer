@@ -1,8 +1,12 @@
 """Tiny job queue on top of Valkey (a Redis-compatible store)."""
 
+import logging
+
 import valkey
 
 from src.config import get_settings
+
+log = logging.getLogger(__name__)
 
 QUEUE_KEY = "runs:queue"
 
@@ -18,4 +22,10 @@ def enqueue_run(run_id: int) -> None:
 def dequeue_run(timeout: int = 5) -> int | None:
     """Block up to `timeout` seconds waiting for a run id. Used by the worker in Week 2."""
     item = get_valkey().brpop([QUEUE_KEY], timeout=timeout)
-    return int(item[1]) if item else None
+    if not item:
+        return None
+    try:
+        return int(item[1])
+    except (TypeError, ValueError):
+        log.exception("Discarding corrupt queue entry %r", item[1])
+        return None
