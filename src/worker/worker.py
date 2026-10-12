@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from src.db.models import Run
 from src.db.session import get_session
+from src.github.client import GitHubClient, get_github_client
 from src.jobs import dequeue_run
 from src.schemas import FixRequest, IssueInfo, RunStatus
 from src.worker.llm import LLMClient, get_llm_client
@@ -28,16 +29,19 @@ def set_status(db: Session, run: Run, status: RunStatus) -> None:
     log.info("Run %s -> %s", run.id, status.value)
 
 
-def build_fix_request(run: Run) -> FixRequest:
-    """Collect everything the LLM needs. Stub for now."""
-    # TODO: fetch the real issue title/body with the GitHub client.
+def build_fix_request(run: Run, github: GitHubClient | None = None) -> FixRequest:
+    """Collect everything the LLM needs."""
+    if github is not None:
+        issue = github.get_issue(run.repo_full_name, run.issue_number)
+    else:
+        log.warning("No GitHub token configured, using a placeholder issue for run %s", run.id)
+        issue = IssueInfo(
+            repo_full_name=run.repo_full_name,
+            issue_number=run.issue_number,
+            title=f"Issue #{run.issue_number}",
+            body="",
+        )
     # TODO: clone the repo and find relevant code (search, then Tree-sitter / Semgrep).
-    issue = IssueInfo(
-        repo_full_name=run.repo_full_name,
-        issue_number=run.issue_number,
-        title=f"Issue #{run.issue_number}",
-        body="",
-    )
     return FixRequest(issue=issue, snippets=[])
 
 
@@ -51,7 +55,9 @@ def _mark_failed(db: Session, run: Run) -> None:
         db.rollback()
 
 
-def process_run(run_id: int, db: Session, llm: LLMClient) -> None:
+def process_run(
+    run_id: int, db: Session, llm: LLMClient, github: GitHubClient | None = None
+) -> None:
     """Run the pipeline for one run. Never raises: problems end up as status 'failed'."""
     run = db.get(Run, run_id)
     if run is None:
@@ -63,7 +69,7 @@ def process_run(run_id: int, db: Session, llm: LLMClient) -> None:
 
     try:
         set_status(db, run, RunStatus.ANALYZING)
-        request = build_fix_request(run)
+        request = build_fix_request(run, github)
 
         set_status(db, run, RunStatus.FIXING)
         run.attempts += 1
@@ -74,7 +80,8 @@ def process_run(run_id: int, db: Session, llm: LLMClient) -> None:
 
         set_status(db, run, RunStatus.TESTING)
         # TODO: run tests in the sandbox, compare with the baseline, retry on failure.
-        # TODO: push a branch and open a PR, then set status PR_OPENED and run.pr_url.
+        # TODO: commit_all + push_branch (src/github/publish.py), then
+        #       github.create_pull_request(...), set status PR_OPENED and run.pr_url.
         log.info("Run %s: pipeline stub finished (testing/PR steps not built yet)", run_id)
     except Exception:
         log.exception("Run %s failed", run_id)
@@ -85,6 +92,7 @@ def run_once(
     llm: LLMClient,
     session_factory: Callable[[], Session] = get_session,
     timeout: int = 5,
+    github: GitHubClient | None = None,
 ) -> bool:
     """Wait up to `timeout` seconds for one job. Returns True if a job was handled."""
     run_id = dequeue_run(timeout=timeout)
@@ -92,18 +100,21 @@ def run_once(
         return False
     db = session_factory()
     try:
-        process_run(run_id, db, llm)
+        process_run(run_id, db, llm, github)
     finally:
         db.close()
     return True
 
 
-def run_forever(llm: LLMClient | None = None) -> None:
+def run_forever(llm: LLMClient | None = None, github: GitHubClient | None = None) -> None:
     llm = llm or get_llm_client()
+    github = github or get_github_client()
+    if github is None:
+        log.warning("GITHUB_TOKEN is not set: issues will use placeholder text.")
     log.info("Worker started, waiting for runs. Press Ctrl+C to stop.")
     while True:
         try:
-            run_once(llm)
+            run_once(llm, github=github)
         except KeyboardInterrupt:
             log.info("Worker stopped.")
             break

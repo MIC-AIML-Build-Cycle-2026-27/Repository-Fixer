@@ -1,5 +1,7 @@
 from src.db.models import Run
 from src.worker import worker
+from src.github.client import GitHubError
+from src.schemas import IssueInfo
 from src.worker.llm import FakeLLMClient
 
 
@@ -91,3 +93,47 @@ def test_fake_llm_returns_a_valid_proposal():
     proposal = FakeLLMClient().propose_fix(request)
     assert proposal.patch.startswith("--- a/")
     assert 0.0 <= proposal.confidence <= 1.0
+
+
+class FakeGitHub:
+    def get_issue(self, repo_full_name, number):
+        return IssueInfo(
+            repo_full_name=repo_full_name,
+            issue_number=number,
+            title="Real title from GitHub",
+            body="Real body",
+        )
+
+
+class BrokenGitHub:
+    def get_issue(self, repo_full_name, number):
+        raise GitHubError(404, "Not Found")
+
+
+def test_worker_uses_the_real_issue_when_github_is_available(db_session):
+    run = _add_run(db_session)
+    llm = FakeLLMClient()
+
+    worker.process_run(run.id, db_session, llm, github=FakeGitHub())
+
+    assert llm.requests[0].issue.title == "Real title from GitHub"
+    assert llm.requests[0].issue.body == "Real body"
+
+
+def test_worker_uses_placeholder_issue_without_github(db_session):
+    run = _add_run(db_session, issue_number=9)
+    llm = FakeLLMClient()
+
+    worker.process_run(run.id, db_session, llm)
+
+    assert llm.requests[0].issue.title == "Issue #9"
+
+
+def test_github_error_marks_run_failed(db_session):
+    run = _add_run(db_session)
+    llm = FakeLLMClient()
+
+    worker.process_run(run.id, db_session, llm, github=BrokenGitHub())
+
+    assert db_session.get(Run, run.id).status == "failed"
+    assert llm.requests == []
