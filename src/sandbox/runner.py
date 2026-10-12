@@ -3,12 +3,14 @@
 Safety notes:
 - Never run untrusted repo code directly on your own machine. Always go through here.
 - No secrets (tokens, .env) are passed into the container.
-- Week-1 draft: the network stays ON so `pip install` works. Later, build an image with the
+- The network stays ON so `pip install` works. Later, build an image with the
   dependencies baked in and pass network="none".
 
 Manual check:  python -m src.sandbox.runner path/to/cloned/repo
 """
+
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -22,6 +24,7 @@ log = logging.getLogger(__name__)
 DEFAULT_IMAGE = "repofixer-sandbox:latest"
 MAX_OUTPUT_CHARS = 20_000
 
+# Phrases that suggest Docker itself had a problem (not the tests).
 DOCKER_INFRA_PATTERNS = (
     "cannot connect to the docker daemon",
     "docker daemon",
@@ -29,6 +32,12 @@ DOCKER_INFRA_PATTERNS = (
     "no such image",
     "permission denied",
     "is the docker daemon running",
+)
+
+# If pytest printed a summary line, pytest really ran, so any "infra" phrase in the output
+# came from the repo's own tests and must not be treated as a Docker failure.
+PYTEST_SUMMARY_RE = re.compile(
+    r"\b\d+ (passed|failed|errors?|skipped|deselected|xfailed|xpassed)\b|no tests ran"
 )
 
 TEST_SCRIPT = (
@@ -42,6 +51,15 @@ TEST_SCRIPT = (
 
 class SandboxError(RuntimeError):
     """Docker itself is missing or failed (not the same as 'the tests failed')."""
+
+
+def _to_text(value) -> str:
+    """subprocess can hand back bytes (e.g. on timeout) even when text=True was used."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value
 
 
 def build_docker_command(
@@ -60,6 +78,7 @@ def build_docker_command(
         "--pids-limit", "256",
         "--network", network,
         "-e", "PIP_DISABLE_PIP_VERSION_CHECK=1",
+        "-e", "PIP_ROOT_USER_ACTION=ignore",
         "-e", "PYTHONDONTWRITEBYTECODE=1",
         "-v", f"{repo_path}:/workspace",
         "-w", "/workspace",
@@ -89,7 +108,8 @@ def run_tests_in_docker(
     except FileNotFoundError as exc:
         raise SandboxError("Docker is not installed or not on PATH") from exc
     except subprocess.TimeoutExpired as exc:
-        partial = ((exc.stdout or "") + (exc.stderr or "")).strip()
+        partial = (_to_text(exc.stdout) + _to_text(exc.stderr)).strip()
+        # Killing the `docker` client does not stop the container, so kill it by name.
         kill = subprocess.run(["docker", "kill", name], capture_output=True, text=True)
         if kill.returncode != 0:
             log.warning(
@@ -110,9 +130,15 @@ def run_tests_in_docker(
     if truncated:
         output = "...[truncated]...\n" + output
 
-    # Exit code 125 means `docker run` itself failed (e.g. the daemon is not running)..
+    # Exit code 125 means `docker run` itself failed (e.g. the daemon is not running).
+    # Other infra problems are detected from the message, but only when pytest never ran.
     lowered = output.lower()
-    if proc.returncode == 125 or any(p in lowered for p in DOCKER_INFRA_PATTERNS):
+    looks_like_infra = (
+        proc.returncode != 0
+        and not PYTEST_SUMMARY_RE.search(output)
+        and any(p in lowered for p in DOCKER_INFRA_PATTERNS)
+    )
+    if proc.returncode == 125 or looks_like_infra:
         raise SandboxError(output.strip() or "Cannot run Docker. Is the daemon running?")
 
     return TestResult(
