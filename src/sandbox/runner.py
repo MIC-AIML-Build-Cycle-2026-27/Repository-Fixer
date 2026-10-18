@@ -5,6 +5,12 @@ Safety notes:
 - No secrets (tokens, .env) are passed into the container.
 - The network stays ON so `pip install` works. Later, build an image with the
   dependencies baked in and pass network="none".
+- The repo is mounted read-only at /src and copied to /workspace inside the container.
+  Whatever the install or the tests write (*.egg-info, caches) stays in the container,
+  so it can never end up in the fix commit, and no root-owned files are left on the host.
+- Compare a run with the baseline using `new_failures()`, not `TestResult.passed`.
+  A repo with no tests (pytest exit code 5) has no new failures, so any patch that
+  applies counts as a fix. The PR body shows the pytest summary line so reviewers can see that.
 
 Manual check:  python -m src.sandbox.runner path/to/cloned/repo
 """
@@ -40,12 +46,20 @@ PYTEST_SUMMARY_RE = re.compile(
     r"\b\d+ (passed|failed|errors?|skipped|deselected|xfailed|xpassed)\b|no tests ran"
 )
 
+# pytest's short summary lines (printed because of -rfE), e.g.
+#   FAILED tests/test_x.py::test_y - AssertionError: ...
+#   ERROR tests/test_z.py - ImportError: ...
+FAILED_LINE_RE = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
+
+# If the copy fails, stop with 125 (reported as SandboxError). Carrying on would run
+# pytest on an empty folder: "no tests ran" means no new failures, so any patch would pass.
 TEST_SCRIPT = (
+    "cp -a /src/. /workspace || { echo 'sandbox: could not copy the repo'; exit 125; }; "
     "if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi; "
     "if [ -f pyproject.toml ] || [ -f setup.py ]; then "
     "pip install -q -e '.[test]' || pip install -q -e '.[dev]' || pip install -q -e .; fi; "
     "pip install -q pytest; "
-    "python -m pytest -q --tb=short -p no:cacheprovider"
+    "python -m pytest -q -rfE --tb=short -p no:cacheprovider"
 )
 
 
@@ -80,7 +94,7 @@ def build_docker_command(
         "-e", "PIP_DISABLE_PIP_VERSION_CHECK=1",
         "-e", "PIP_ROOT_USER_ACTION=ignore",
         "-e", "PYTHONDONTWRITEBYTECODE=1",
-        "-v", f"{repo_path}:/workspace",
+        "-v", f"{repo_path}:/src:ro",
         "-w", "/workspace",
         image,
         "sh", "-c", TEST_SCRIPT,
@@ -104,13 +118,27 @@ def run_tests_in_docker(
     started = time.monotonic()
 
     try:
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        # One stream, in the order it was printed. Separate pipes would put pip's stderr
+        # warnings after pytest's summary, at the end of the output the LLM gets back.
+        # UTF-8 explicitly: Windows would decode as cp1252, and a byte it can't map makes
+        # subprocess drop the whole output silently.
+        proc = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
     except FileNotFoundError as exc:
         raise SandboxError("Docker is not installed or not on PATH") from exc
     except subprocess.TimeoutExpired as exc:
         partial = (_to_text(exc.stdout) + _to_text(exc.stderr)).strip()
         # Killing the `docker` client does not stop the container, so kill it by name.
-        kill = subprocess.run(["docker", "kill", name], capture_output=True, text=True)
+        # With a timeout of its own, so a hung Docker can't hang the worker forever.
+        kill = subprocess.run(
+            ["docker", "kill", name], capture_output=True, text=True, errors="replace", timeout=60
+        )
         if kill.returncode != 0:
             log.warning(
                 "docker kill %s failed: %s", name, (kill.stderr or kill.stdout).strip()
@@ -146,6 +174,37 @@ def run_tests_in_docker(
         output=output,
         duration_seconds=time.monotonic() - started,
     )
+
+
+def failed_tests(output: str) -> set[str]:
+    """IDs of the tests (or test files) pytest reported as FAILED or ERROR."""
+    return set(FAILED_LINE_RE.findall(output))
+
+
+def pytest_ran(result: TestResult) -> bool:
+    """False when pytest never reported a result (timeout, crash), so nothing can be compared."""
+    return result.passed or bool(PYTEST_SUMMARY_RE.search(result.output))
+
+
+def new_failures(baseline: TestResult, after: TestResult) -> list[str] | None:
+    """Tests that fail after the patch but did not fail in the baseline.
+
+    Returns [] when the patch broke nothing. Returns None when pytest did not run to the
+    end after the patch (see pytest_ran): treat that as a failure.
+    """
+    if after.passed:
+        return []
+    if not pytest_ran(after):
+        return None
+    return sorted(failed_tests(after.output) - failed_tests(baseline.output))
+
+
+def summary_line(output: str) -> str:
+    """pytest's final count line, e.g. '1 failed, 3 passed in 2.01s'."""
+    for line in reversed(output.splitlines()):
+        if PYTEST_SUMMARY_RE.search(line):
+            return line.strip("= ")
+    return "(no pytest summary)"
 
 
 if __name__ == "__main__":

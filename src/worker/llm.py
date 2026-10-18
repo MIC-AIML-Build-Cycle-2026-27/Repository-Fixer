@@ -1,7 +1,12 @@
 """LLM client interface used by the worker.
 
-The real client will come from the LLM team. It only has to provide one method with this
-signature, so swapping it in later is a one-line change in `get_llm_client()`.
+Note for the LLM team: read docs/llm-integration.md before starting. In short:
+- Implement one method, `propose_fix(request: FixRequest) -> FixProposal` (see LLMClient),
+  and return your client from `get_llm_client()` below. That is all the wiring needed.
+- Retrieval (RAG) is yours too. For now the request carries the issue only.
+- Read the API key with `get_settings().llm_api_key` (LLM_API_KEY in .env).
+- Retry rate limits and timeouts inside your client: an exception fails the whole run.
+- Tests must not call the real API (CI has no key). Use FakeLLMClient or your own fake.
 """
 
 from typing import Protocol
@@ -41,5 +46,5 @@ class FakeLLMClient:
 
 
 def get_llm_client() -> LLMClient:
-    # TODO: return the LLM team's real client here once it exists.
+    # TODO (LLM team): return your real client here. Keep FakeLLMClient for tests.
     return FakeLLMClient()
