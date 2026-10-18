@@ -39,19 +39,30 @@ class TestResult(BaseModel):
     duration_seconds: float = 0.0
 
 
-# Pipeline -> LLM
+# Pipeline -> LLM. LLM team: what each field means and how it is used is in
+# docs/llm-integration.md.
 class FixRequest(BaseModel):
+    # Title and body are untrusted text from whoever opened the issue (possible prompt
+    # injection). Treat them as data, not as instructions.
     issue: IssueInfo
+    # Empty from the pipeline: the LLM team does retrieval itself. Kept so the contract
+    # does not change until both teams agree how the LLM side gets the repo.
     snippets: list[CodeSnippet] = Field(default_factory=list)
-    failing_test_output: str | None = None  # filled in on retry attempts
-    attempt: int = 1
+    # Set on retries: why the previous patch was rejected (it did not apply, or which
+    # tests newly failed) followed by the end of the test output. The rejected patch has
+    # already been undone, so the next patch must be complete, starting from the original code.
+    failing_test_output: str | None = None
+    attempt: int = 1  # 1 to MAX_ATTEMPTS in src/worker/worker.py
 
 
 # LLM -> Pipeline
 class FixProposal(BaseModel):
-    explanation: str
-    patch: str  # unified diff
-    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: str  # Markdown, shown in the PR body and commit message (cut at 4000 chars)
+    # A unified diff applied with `git apply --recount` from the repo root. Needs a/ and b/
+    # path prefixes and unchanged context lines before AND after each change. Changes under
+    # .github/ are rejected. Full rules: docs/llm-integration.md.
+    patch: str
+    confidence: float = Field(ge=0.0, le=1.0)  # 0 to 1. Shown in the PR body, not used to decide
 
 
 # Pipeline -> Frontend

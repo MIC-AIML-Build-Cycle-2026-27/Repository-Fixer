@@ -1,6 +1,11 @@
 # Local development stack.
 #   docker compose up -d db valkey     -> just the infrastructure (run the API on your machine)
-#   docker compose up --build          -> everything, including the API container
+#   docker compose up --build          -> infrastructure + the API container
+#
+# Not in compose yet:
+#   - the worker: run `python -m src.worker.worker` on your machine. Inside a container,
+#     the sandbox's `docker run -v <path>` would point at a path the host cannot see.
+#   - table creation: run `python -m src.db.init_db` once, or the first webhook fails.
 
 services:
   db:

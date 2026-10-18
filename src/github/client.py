@@ -29,7 +29,7 @@ class GitHubClient:
         timeout: float = 20.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self._token = token
+        self.token = token  # public: the worker also needs it to push the fix branch
         self._http = httpx.Client(
             base_url=base_url,
             timeout=timeout,
@@ -66,7 +66,9 @@ class GitHubClient:
                 message += f" {str(data['errors'])[:300]}"
         except ValueError:
             message = response.text[:200]
-        return message.replace(self._token, "***").strip()
+        if self.token:  # replace("", ...) would insert *** between every character
+            message = message.replace(self.token, "***")
+        return message.strip()
 
     def _request(self, method: str, path: str, json: dict | None = None) -> dict:
         try:
